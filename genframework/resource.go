@@ -358,14 +358,20 @@ func genHelpers(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, pkg s
 	fmt.Fprintf(b, "}\n")
 
 	// read<Noun>Members reads the members sub-collection (needs the client, so it
-	// is separate from the shared read<Noun>). Best-effort: on error it leaves an
-	// unset attribute empty rather than failing the read.
+	// is separate from the shared read<Noun>). The member cmdlets can hit a
+	// different backend/DC than the create, so the read retries not-found until
+	// the object is visible (rides out cross-DC AD-replication lag). Best-effort:
+	// if it never becomes visible it leaves an unset attribute empty rather than
+	// failing the read.
 	if mc := r.Members; mc != nil {
 		fmt.Fprintf(b, "\nfunc read%sMembers(ctx context.Context, svc *%s.Service, identity any, m *%s) {\n", r.Noun, pkg, model)
-		fmt.Fprintf(b, "\tres, err := svc.%s(ctx, %s.%s{%s: identity})\n", mc.ReadMethod, pkg, mc.ReadParams, mc.IdentityField)
-		fmt.Fprintf(b, "\tif err != nil {\n\t\tif m.%s.IsNull() || m.%s.IsUnknown() {\n\t\t\tm.%s = stringSetValue(ctx, nil)\n\t\t}\n\t\treturn\n\t}\n", mc.Field, mc.Field, mc.Field)
+		fmt.Fprintf(b, "\tvals, present, err := resourcex.LoadUntil(ctx, consistency.Config{}, func(ctx context.Context) ([]map[string]any, bool, error) {\n")
+		fmt.Fprintf(b, "\t\tres, gerr := svc.%s(ctx, %s.%s{%s: identity})\n", mc.ReadMethod, pkg, mc.ReadParams, mc.IdentityField)
+		fmt.Fprintf(b, "\t\tif gerr != nil {\n\t\t\tif isNotFound(gerr) {\n\t\t\t\treturn nil, false, nil\n\t\t\t}\n\t\t\treturn nil, false, gerr\n\t\t}\n")
+		fmt.Fprintf(b, "\t\treturn res.Value, true, nil\n\t}, nil)\n")
+		fmt.Fprintf(b, "\tif err != nil || !present {\n\t\tif m.%s.IsNull() || m.%s.IsUnknown() {\n\t\t\tm.%s = stringSetValue(ctx, nil)\n\t\t}\n\t\treturn\n\t}\n", mc.Field, mc.Field, mc.Field)
 		fmt.Fprintf(b, "\tvar members []string\n")
-		fmt.Fprintf(b, "\tfor _, mm := range res.Value {\n\t\tmembers = append(members, %s)\n\t}\n", mc.memberReadExpr())
+		fmt.Fprintf(b, "\tfor _, mm := range vals {\n\t\tmembers = append(members, %s)\n\t}\n", mc.memberReadExpr())
 		fmt.Fprintf(b, "\tm.%s = stringSetValue(ctx, members)\n}\n", mc.Field)
 	}
 }
