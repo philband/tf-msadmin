@@ -121,3 +121,45 @@ func TestPointerParamEmitsPointerAccessors(t *testing.T) {
 		t.Error("PointerParam bool must use ValueBoolPointer(), not ValueBool()")
 	}
 }
+
+// TestIdentityIsName covers the Teams -Cs*Policy family where the -Identity is the
+// user-chosen name and also the create key.
+func TestIdentityIsName(t *testing.T) {
+	cfg := Config{
+		Package: "provider", ClientsImport: "example.com/clients", ClientField: "CS",
+		BindingsImport: "github.com/philband/go-teams/cs", BindingsPkg: "cs",
+	}
+	r := Resource{
+		Noun: "MeetingPolicy", TFName: "meeting_policy", Description: "A meeting policy.",
+		IdentityIsName: true,
+		Attributes: []Attribute{
+			{TFName: "allow_meet_now", Field: "AllowMeetNow", APIName: "AllowMeetNow", Type: TypeBool, Computed: true, PointerParam: true, Description: "Allow meet now.", InCreate: true, InUpdate: true},
+		},
+		Create: Op{Method: "NewCsTeamsMeetingPolicy", Params: "NewCsTeamsMeetingPolicyParams", IdentityField: "Identity"},
+		Read:   Op{Method: "GetCsTeamsMeetingPolicy", Params: "GetCsTeamsMeetingPolicyParams", IdentityField: "Identity"},
+		Update: Op{Method: "SetCsTeamsMeetingPolicy", Params: "SetCsTeamsMeetingPolicyParams", IdentityField: "Identity"},
+		Delete: Op{Method: "RemoveCsTeamsMeetingPolicy", Params: "RemoveCsTeamsMeetingPolicyParams", IdentityField: "Identity"},
+	}
+	files, err := Generate(cfg, []Resource{r})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	var res string
+	for _, f := range files {
+		if f.Name == "meeting_policy_resource.go" {
+			res = string(f.Content)
+		}
+	}
+	// identity is a Required, RequiresReplace input (its description is unique to
+	// the IdentityIsName branch, avoiding gofmt-alignment whitespace).
+	if !strings.Contains(res, `Required: true, Description: "Name (Identity)`) {
+		t.Error("identity attribute must be Required when IdentityIsName")
+	}
+	if !strings.Contains(res, "stringplanmodifier.RequiresReplace()") {
+		t.Error("identity must be RequiresReplace when IdentityIsName")
+	}
+	// ...and it is passed to the create op.
+	if !strings.Contains(res, "p.Identity = plan.Identity.ValueString()") {
+		t.Error("Create must pass the identity/name to the New params when IdentityIsName")
+	}
+}

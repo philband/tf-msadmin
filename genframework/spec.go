@@ -114,6 +114,13 @@ type Resource struct {
 	// holding the whole object (json-encoded). Used for Get-only nouns whose
 	// property schema is not machine-readable. Attributes are ignored.
 	RawJSON bool
+	// IdentityIsName marks a CRUD resource whose New cmdlet is keyed by the same
+	// -Identity that Get/Set/Remove use — i.e. the identity IS the user-chosen
+	// name, with no separate Name attribute (the Teams -Cs*Policy family:
+	// New-CsTeamsMeetingPolicy -Identity <name>). The identity attribute becomes a
+	// Required, RequiresReplace input and is passed to Create via
+	// Create.IdentityField (default "Identity").
+	IdentityIsName bool
 }
 
 // Config carries the provider-level constants shared by all generated files and

@@ -108,6 +108,9 @@ func genResource(cfg Config, r Resource) ([]byte, error) {
 	if r.Config && !r.Singleton {
 		fmt.Fprintf(&b, "\t\t\t%q: schema.StringAttribute{Required: true, Description: %q, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},\n",
 			"identity", "Identity of the existing object whose configuration is managed.")
+	} else if r.IdentityIsName {
+		fmt.Fprintf(&b, "\t\t\t%q: schema.StringAttribute{Required: true, Description: %q, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},\n",
+			"identity", "Name (Identity) of the object; also the create key. Changing it forces replacement.")
 	} else {
 		fmt.Fprintf(&b, "\t\t\t%q: schema.StringAttribute{Computed: true, Description: %q},\n",
 			"identity", "Identity used to target the object in cmdlets.")
@@ -162,6 +165,14 @@ func genCreate(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, pkg st
 		if a.InCreate && a.Object {
 			fmt.Fprintf(b, "\tif v := plan.%s.ValueString(); v != \"\" {\n\t\tp.%s = v\n\t}\n", a.Field, a.Field)
 		}
+	}
+	// IdentityIsName: the create is keyed by the user-chosen identity/name.
+	if r.IdentityIsName {
+		key := r.Create.IdentityField
+		if key == "" {
+			key = "Identity"
+		}
+		fmt.Fprintf(b, "\tp.%s = plan.Identity.ValueString()\n", key)
 	}
 	fmt.Fprintf(b, "\tif resp.Diagnostics.HasError() {\n\t\treturn\n\t}\n")
 	fmt.Fprintf(b, "\tres, err := %s.%s(ctx, p)\n", svc, r.Create.Method)
