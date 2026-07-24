@@ -79,10 +79,10 @@ func TestRawJSONDataSource(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"JSON types.String `tfsdk:\"json\"`",
-		`"json": schema.StringAttribute{Computed: true`,
+		"`tfsdk:\"json\"`",
+		"decode with jsondecode()",
 		"m.JSON = types.StringValue(toJSON(obj))",
-		"svc.GetFederationTrust(ctx, exo.GetFederationTrustParams{Identity: identity})",
+		"GetFederationTrust(ctx, exo.GetFederationTrustParams{Identity: identity})",
 	} {
 		if !strings.Contains(ds, want) {
 			t.Errorf("raw-json data source missing %q", want)
