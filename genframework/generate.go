@@ -25,9 +25,15 @@ func Generate(cfg Config, resources []Resource) ([]File, error) {
 	for _, r := range sorted {
 		src, err := genResource(cfg, r)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", r.Noun, err)
+			return nil, fmt.Errorf("%s resource: %w", r.Noun, err)
 		}
 		files = append(files, File{Name: r.TFName + "_resource.go", Content: src})
+
+		ds, err := genDataSource(cfg, r)
+		if err != nil {
+			return nil, fmt.Errorf("%s data source: %w", r.Noun, err)
+		}
+		files = append(files, File{Name: r.TFName + "_data_source.go", Content: ds})
 	}
 
 	reg, err := genRegistration(cfg, sorted)

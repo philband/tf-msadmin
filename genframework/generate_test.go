@@ -38,18 +38,30 @@ func TestGenerateRoleGroupIsValidGo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Generate: %v", err) // format.Source failure surfaces the bad source
 	}
-	if len(files) != 2 { // resource + registration
-		t.Fatalf("want 2 files, got %d", len(files))
+	if len(files) != 3 { // resource + data source + registration
+		t.Fatalf("want 3 files, got %d", len(files))
 	}
 
-	var res string
+	var res, ds string
 	for _, f := range files {
-		if f.Name == "role_group_resource.go" {
+		switch f.Name {
+		case "role_group_resource.go":
 			res = string(f.Content)
+		case "role_group_data_source.go":
+			ds = string(f.Content)
 		}
 	}
-	if res == "" {
-		t.Fatal("role_group_resource.go not generated")
+	if res == "" || ds == "" {
+		t.Fatalf("missing generated files: resource=%v data_source=%v", res != "", ds != "")
+	}
+	for _, want := range []string{
+		"func NewRoleGroupDataSource() datasource.DataSource",
+		"readRoleGroup(ctx, obj, &data)",
+		"d.client.EXO.GetRoleGroup(ctx",
+	} {
+		if !strings.Contains(ds, want) {
+			t.Errorf("data source missing %q", want)
+		}
 	}
 
 	for _, want := range []string{
