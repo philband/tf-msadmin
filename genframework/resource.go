@@ -70,8 +70,13 @@ func genResource(cfg Config, r Resource) ([]byte, error) {
 	fmt.Fprintf(&b, "\t_ resource.ResourceWithImportState = &%s{}\n", recv)
 	fmt.Fprintf(&b, ")\n\n")
 	fmt.Fprintf(&b, "type %s struct{ client *clients.Client }\n\n", recv)
-	fmt.Fprintf(&b, "// %s manages the %s object (%s / %s / %s / %s).\n",
-		r.ctor(), r.Noun, r.cmdlet("New"), r.cmdlet("Get"), r.cmdlet("Set"), r.cmdlet("Remove"))
+	if r.Config {
+		fmt.Fprintf(&b, "// %s manages the %s configuration (%s / %s); it adopts the existing object and is not deleted on destroy.\n",
+			r.ctor(), r.Noun, r.cmdlet("Get"), r.cmdlet("Set"))
+	} else {
+		fmt.Fprintf(&b, "// %s manages the %s object (%s / %s / %s / %s).\n",
+			r.ctor(), r.Noun, r.cmdlet("New"), r.cmdlet("Get"), r.cmdlet("Set"), r.cmdlet("Remove"))
+	}
 	fmt.Fprintf(&b, "func %s() resource.Resource { return &%s{} }\n\n", r.ctor(), recv)
 
 	// Model.
@@ -97,8 +102,13 @@ func genResource(cfg Config, r Resource) ([]byte, error) {
 	fmt.Fprintf(&b, "\t\tAttributes: map[string]schema.Attribute{\n")
 	fmt.Fprintf(&b, "\t\t\t%q: schema.StringAttribute{Computed: true, Description: %q, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},\n",
 		"id", "Object identifier (GUID).")
-	fmt.Fprintf(&b, "\t\t\t%q: schema.StringAttribute{Computed: true, Description: %q},\n",
-		"identity", "Identity used to target the object in cmdlets.")
+	if r.Config && !r.Singleton {
+		fmt.Fprintf(&b, "\t\t\t%q: schema.StringAttribute{Required: true, Description: %q, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},\n",
+			"identity", "Identity of the existing object whose configuration is managed.")
+	} else {
+		fmt.Fprintf(&b, "\t\t\t%q: schema.StringAttribute{Computed: true, Description: %q},\n",
+			"identity", "Identity used to target the object in cmdlets.")
+	}
 	for _, a := range r.Attributes {
 		fmt.Fprintf(&b, "\t\t\t%q: %s,\n", a.TFName, a.schemaAttr())
 	}
@@ -113,10 +123,18 @@ func genResource(cfg Config, r Resource) ([]byte, error) {
 	fmt.Fprintf(&b, "\tif req.ProviderData == nil {\n\t\treturn\n\t}\n")
 	fmt.Fprintf(&b, "\tr.client = req.ProviderData.(*clients.Client)\n}\n\n")
 
-	genCreate(&b, cfg, r, recv, model, svc, pkg)
+	if r.Config {
+		genConfigCreate(&b, cfg, r, recv, model, svc, pkg)
+	} else {
+		genCreate(&b, cfg, r, recv, model, svc, pkg)
+	}
 	genRead(&b, cfg, r, recv, model)
 	genUpdate(&b, cfg, r, recv, model, svc, pkg)
-	genDelete(&b, cfg, r, recv, model, svc, pkg)
+	if r.Config {
+		genConfigDelete(&b, r, recv, model)
+	} else {
+		genDelete(&b, cfg, r, recv, model, svc, pkg)
+	}
 	genImport(&b, recv)
 	genHelpers(&b, cfg, r, recv, model, svc, pkg)
 
@@ -161,6 +179,49 @@ func genCreate(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, pkg st
 	}
 	fmt.Fprintf(b, "\tr.reconcileState(&cfg, &plan)\n")
 	fmt.Fprintf(b, "\tresp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)\n}\n\n")
+}
+
+// genConfigCreate emits Create for a Get+Set config resource: it adopts the
+// existing config by applying Set with the configured settings, then reads.
+func genConfigCreate(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, pkg string) {
+	fmt.Fprintf(b, "func (r *%s) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {\n", recv)
+	fmt.Fprintf(b, "\tvar plan %s\n", model)
+	fmt.Fprintf(b, "\tresp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)\n")
+	fmt.Fprintf(b, "\tif resp.Diagnostics.HasError() {\n\t\treturn\n\t}\n")
+	fmt.Fprintf(b, "\tsp := %s.%s{}\n", pkg, r.Update.Params)
+	if r.Update.IdentityField != "" {
+		fmt.Fprintf(b, "\tsp.%s = plan.Identity.ValueString()\n", r.Update.IdentityField)
+	}
+	for _, a := range r.Attributes {
+		if !a.InUpdate {
+			continue
+		}
+		if a.Object {
+			fmt.Fprintf(b, "\tif v := plan.%s.ValueString(); v != \"\" {\n\t\tsp.%s = v\n\t}\n", a.Field, a.Field)
+		} else {
+			fmt.Fprintf(b, "\tsp.%s = %s\n", a.Field, a.planValue())
+		}
+	}
+	fmt.Fprintf(b, "\tif resp.Diagnostics.HasError() {\n\t\treturn\n\t}\n")
+	fmt.Fprintf(b, "\tif _, err := %s.%s(ctx, sp); err != nil {\n\t\tresp.Diagnostics.AddError(%q, err.Error())\n\t\treturn\n\t}\n", svc, r.Update.Method, r.cmdlet("Set")+" failed")
+	fmt.Fprintf(b, "\tcfg := plan\n")
+	if r.Singleton {
+		fmt.Fprintf(b, "\tidentity := \"\"\n")
+	} else {
+		fmt.Fprintf(b, "\tidentity := plan.Identity.ValueString()\n")
+	}
+	fmt.Fprintf(b, "\tr.refresh(ctx, identity, &plan, &resp.Diagnostics, nil)\n")
+	fmt.Fprintf(b, "\tr.reconcileState(&cfg, &plan)\n")
+	fmt.Fprintf(b, "\tresp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)\n}\n\n")
+}
+
+// genConfigDelete emits a no-op Delete for a config resource: the config cannot
+// be deleted, so it is dropped from state with a warning.
+func genConfigDelete(b *bytes.Buffer, r Resource, recv, model string) {
+	fmt.Fprintf(b, "func (r *%s) Delete(_ context.Context, _ resource.DeleteRequest, resp *resource.DeleteResponse) {\n", recv)
+	fmt.Fprintf(b, "\tresp.Diagnostics.AddWarning(%q, %q)\n}\n\n",
+		r.Noun+" configuration not deleted",
+		"This resource manages an existing "+r.Noun+" configuration. It has been removed from Terraform state, but the configuration itself remains unchanged in the tenant.")
 }
 
 func genRead(b *bytes.Buffer, cfg Config, r Resource, recv, model string) {
@@ -248,7 +309,11 @@ func genHelpers(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, pkg s
 	// refresh
 	fmt.Fprintf(b, "func (r *%s) refresh(ctx context.Context, identity any, m *%s, diags *diag.Diagnostics, reflected func(map[string]any) bool) bool {\n", recv, model)
 	fmt.Fprintf(b, "\tget := func(ctx context.Context) (map[string]any, bool, error) {\n")
-	fmt.Fprintf(b, "\t\tres, gerr := %s.%s(ctx, %s.%s{%s: identity})\n", svc, r.Read.Method, pkg, r.Read.Params, r.Read.IdentityField)
+	if r.Read.IdentityField != "" {
+		fmt.Fprintf(b, "\t\tres, gerr := %s.%s(ctx, %s.%s{%s: identity})\n", svc, r.Read.Method, pkg, r.Read.Params, r.Read.IdentityField)
+	} else {
+		fmt.Fprintf(b, "\t\t_ = identity\n\t\tres, gerr := %s.%s(ctx, %s.%s{})\n", svc, r.Read.Method, pkg, r.Read.Params)
+	}
 	fmt.Fprintf(b, "\t\tif gerr != nil {\n\t\t\tif isNotFound(gerr) {\n\t\t\t\treturn nil, false, nil\n\t\t\t}\n\t\t\treturn nil, false, gerr\n\t\t}\n")
 	fmt.Fprintf(b, "\t\to := firstObject(res.Value)\n\t\treturn o, o != nil, nil\n\t}\n")
 	fmt.Fprintf(b, "\tobj, present, err := resourcex.LoadUntil(ctx, consistency.Config{}, get, reflected)\n")
@@ -264,7 +329,11 @@ func genHelpers(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, pkg s
 	// and the data source.
 	fmt.Fprintf(b, "func read%s(ctx context.Context, obj map[string]any, m *%s) {\n", r.Noun, model)
 	fmt.Fprintf(b, "\tm.ID = types.StringValue(firstNonEmptyStr(getString(obj, %q), getString(obj, %q), getString(obj, %q)))\n", "Guid", "Id", "Identity")
-	fmt.Fprintf(b, "\tm.Identity = types.StringValue(%s)\n", r.identityReadExpr())
+	// For a per-object config, identity is a required input and must not be
+	// overwritten by a (possibly differently-formatted) read-back value.
+	if !(r.Config && !r.Singleton) {
+		fmt.Fprintf(b, "\tm.Identity = types.StringValue(%s)\n", r.identityReadExpr())
+	}
 	for _, a := range r.Attributes {
 		fmt.Fprintf(b, "\t%s\n", a.readAssign())
 	}

@@ -96,6 +96,16 @@ type Resource struct {
 	// Members, when non-nil, adds a members sub-collection managed by companion
 	// cmdlets.
 	Members *MemberCollection
+
+	// Config marks a Get+Set config object (no New/Remove): Create adopts the
+	// existing config by applying Set, Update applies Set, and Delete is a no-op
+	// (the config persists). Create/Read use the Update/Read ops accordingly.
+	Config bool
+	// Singleton marks an org-wide config with no identity (e.g.
+	// Set-AdminAuditLogConfig): Read/Update take no key and there is no identity
+	// input. When false on a Config resource, identity is a required input that
+	// references the existing object (e.g. Set-CASMailbox -Identity <mailbox>).
+	Singleton bool
 }
 
 // Config carries the provider-level constants shared by all generated files and
