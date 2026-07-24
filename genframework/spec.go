@@ -106,6 +106,9 @@ type Resource struct {
 	// input. When false on a Config resource, identity is a required input that
 	// references the existing object (e.g. Set-CASMailbox -Identity <mailbox>).
 	Singleton bool
+	// DataSourceOnly emits only a (self-contained) data source, no managed
+	// resource — for read-only Get nouns. Only Read and Attributes are used.
+	DataSourceOnly bool
 }
 
 // Config carries the provider-level constants shared by all generated files and

@@ -16,6 +16,9 @@ func genRegistration(cfg Config, resources []Resource) ([]byte, error) {
 	fmt.Fprintf(&b, "func generatedResources() []func() resource.Resource {\n")
 	fmt.Fprintf(&b, "\treturn []func() resource.Resource{\n")
 	for _, r := range resources {
+		if r.DataSourceOnly {
+			continue
+		}
 		fmt.Fprintf(&b, "\t\t%s,\n", r.ctor())
 	}
 	fmt.Fprintf(&b, "\t}\n}\n\n")
@@ -215,6 +218,23 @@ func genConfigCreate(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, 
 	fmt.Fprintf(b, "\tresp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)\n}\n\n")
 }
 
+// genReadInto emits the read<Noun> free function that maps a read-back object
+// into the model; shared by the resource, the data source and the standalone
+// (Get-only) data source.
+func genReadInto(b *bytes.Buffer, r Resource, model string) {
+	fmt.Fprintf(b, "func read%s(ctx context.Context, obj map[string]any, m *%s) {\n", r.Noun, model)
+	fmt.Fprintf(b, "\tm.ID = types.StringValue(firstNonEmptyStr(getString(obj, %q), getString(obj, %q), getString(obj, %q)))\n", "Guid", "Id", "Identity")
+	// For a per-object config, identity is a required input and must not be
+	// overwritten by a (possibly differently-formatted) read-back value.
+	if !(r.Config && !r.Singleton) {
+		fmt.Fprintf(b, "\tm.Identity = types.StringValue(%s)\n", r.identityReadExpr())
+	}
+	for _, a := range r.Attributes {
+		fmt.Fprintf(b, "\t%s\n", a.readAssign())
+	}
+	fmt.Fprintf(b, "\t_ = ctx\n}\n\n")
+}
+
 // genConfigDelete emits a no-op Delete for a config resource: the config cannot
 // be deleted, so it is dropped from state with a warning.
 func genConfigDelete(b *bytes.Buffer, r Resource, recv, model string) {
@@ -325,19 +345,7 @@ func genHelpers(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, pkg s
 	}
 	fmt.Fprintf(b, "\treturn true\n}\n\n")
 
-	// read<Noun> maps a read-back object into the model; shared by the resource
-	// and the data source.
-	fmt.Fprintf(b, "func read%s(ctx context.Context, obj map[string]any, m *%s) {\n", r.Noun, model)
-	fmt.Fprintf(b, "\tm.ID = types.StringValue(firstNonEmptyStr(getString(obj, %q), getString(obj, %q), getString(obj, %q)))\n", "Guid", "Id", "Identity")
-	// For a per-object config, identity is a required input and must not be
-	// overwritten by a (possibly differently-formatted) read-back value.
-	if !(r.Config && !r.Singleton) {
-		fmt.Fprintf(b, "\tm.Identity = types.StringValue(%s)\n", r.identityReadExpr())
-	}
-	for _, a := range r.Attributes {
-		fmt.Fprintf(b, "\t%s\n", a.readAssign())
-	}
-	fmt.Fprintf(b, "\t_ = ctx\n}\n\n")
+	genReadInto(b, r, model)
 
 	// reconcileState
 	fmt.Fprintf(b, "func (r *%s) reconcileState(cfg, read *%s) {\n", recv, model)

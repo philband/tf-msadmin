@@ -23,7 +23,7 @@ func genDataSource(cfg Config, r Resource) ([]byte, error) {
 	fmt.Fprintf(&b, "\t%q\n\n", "context")
 	fmt.Fprintf(&b, "\t%q\n", "github.com/hashicorp/terraform-plugin-framework/datasource")
 	fmt.Fprintf(&b, "\t%q\n", "github.com/hashicorp/terraform-plugin-framework/datasource/schema")
-	if r.hasSet() {
+	if r.hasSet() || r.DataSourceOnly {
 		fmt.Fprintf(&b, "\t%q\n", "github.com/hashicorp/terraform-plugin-framework/types")
 	}
 	fmt.Fprintf(&b, "\n\t%q\n", "github.com/philband/go-msadmin/consistency")
@@ -90,7 +90,20 @@ func genDataSource(cfg Config, r Resource) ([]byte, error) {
 	if r.Members != nil {
 		fmt.Fprintf(&b, "\tread%sMembers(ctx, %s, identity, &data)\n", r.Noun, svc)
 	}
-	fmt.Fprintf(&b, "\tresp.Diagnostics.Append(resp.State.Set(ctx, &data)...)\n}\n")
+	fmt.Fprintf(&b, "\tresp.Diagnostics.Append(resp.State.Set(ctx, &data)...)\n}\n\n")
+
+	// A standalone (Get-only) data source has no resource file, so it carries
+	// its own model + read<Noun>.
+	if r.DataSourceOnly {
+		fmt.Fprintf(&b, "type %s struct {\n", model)
+		fmt.Fprintf(&b, "\tID types.String `tfsdk:\"id\"`\n")
+		fmt.Fprintf(&b, "\tIdentity types.String `tfsdk:\"identity\"`\n")
+		for _, a := range r.Attributes {
+			fmt.Fprintf(&b, "\t%s\n", a.modelField())
+		}
+		fmt.Fprintf(&b, "}\n\n")
+		genReadInto(&b, r, model)
+	}
 
 	return gofmt(b.String())
 }

@@ -23,12 +23,13 @@ func Generate(cfg Config, resources []Resource) ([]File, error) {
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Noun < sorted[j].Noun })
 
 	for _, r := range sorted {
-		src, err := genResource(cfg, r)
-		if err != nil {
-			return nil, fmt.Errorf("%s resource: %w", r.Noun, err)
+		if !r.DataSourceOnly {
+			src, err := genResource(cfg, r)
+			if err != nil {
+				return nil, fmt.Errorf("%s resource: %w", r.Noun, err)
+			}
+			files = append(files, File{Name: r.TFName + "_resource.go", Content: src})
 		}
-		files = append(files, File{Name: r.TFName + "_resource.go", Content: src})
-
 		ds, err := genDataSource(cfg, r)
 		if err != nil {
 			return nil, fmt.Errorf("%s data source: %w", r.Noun, err)
