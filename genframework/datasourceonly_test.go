@@ -54,3 +54,38 @@ func TestDataSourceOnly(t *testing.T) {
 		t.Error("DataSourceOnly noun must be registered as a data source")
 	}
 }
+
+// TestRawJSONDataSource verifies a raw-json data source exposes id/identity/name/
+// display_name + a json attribute, with no per-property schema.
+func TestRawJSONDataSource(t *testing.T) {
+	cfg := Config{
+		Package: "provider", ClientsImport: "example.com/clients", ClientField: "EXO",
+		BindingsImport: "github.com/philband/go-exoscc/exo", BindingsPkg: "exo",
+	}
+	r := Resource{
+		Noun: "FederationTrust", TFName: "federation_trust", Description: "Federation trust.",
+		Read:           Op{Method: "GetFederationTrust", Params: "GetFederationTrustParams", IdentityField: "Identity"},
+		DataSourceOnly: true,
+		RawJSON:        true,
+	}
+	files, err := Generate(cfg, []Resource{r})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	var ds string
+	for _, f := range files {
+		if f.Name == "federation_trust_data_source.go" {
+			ds = string(f.Content)
+		}
+	}
+	for _, want := range []string{
+		"JSON types.String `tfsdk:\"json\"`",
+		`"json": schema.StringAttribute{Computed: true`,
+		"m.JSON = types.StringValue(toJSON(obj))",
+		"svc.GetFederationTrust(ctx, exo.GetFederationTrustParams{Identity: identity})",
+	} {
+		if !strings.Contains(ds, want) {
+			t.Errorf("raw-json data source missing %q", want)
+		}
+	}
+}

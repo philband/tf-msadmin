@@ -51,12 +51,18 @@ func genDataSource(cfg Config, r Resource) ([]byte, error) {
 	fmt.Fprintf(&b, "\t\tAttributes: map[string]schema.Attribute{\n")
 	fmt.Fprintf(&b, "\t\t\t%q: schema.StringAttribute{Computed: true, Description: %q},\n", "id", "Object identifier (GUID).")
 	fmt.Fprintf(&b, "\t\t\t%q: schema.StringAttribute{Optional: true, Computed: true, Description: %q},\n", "identity", "Identity used to look up the object.")
-	for _, a := range r.Attributes {
-		optional := a.Field == "Name"
-		fmt.Fprintf(&b, "\t\t\t%q: %s,\n", a.TFName, dsSchemaAttr(a, optional))
-	}
-	if r.Members != nil {
-		fmt.Fprintf(&b, "\t\t\t%q: schema.SetAttribute{ElementType: types.StringType, Computed: true, Description: %q},\n", r.Members.TFName, r.Members.Description)
+	if r.RawJSON {
+		fmt.Fprintf(&b, "\t\t\t%q: schema.StringAttribute{Computed: true, Description: %q},\n", "name", "Name of the object.")
+		fmt.Fprintf(&b, "\t\t\t%q: schema.StringAttribute{Computed: true, Description: %q},\n", "display_name", "Display name of the object.")
+		fmt.Fprintf(&b, "\t\t\t%q: schema.StringAttribute{Computed: true, Description: %q},\n", "json", "The full object encoded as JSON; decode with jsondecode().")
+	} else {
+		for _, a := range r.Attributes {
+			optional := a.Field == "Name"
+			fmt.Fprintf(&b, "\t\t\t%q: %s,\n", a.TFName, dsSchemaAttr(a, optional))
+		}
+		if r.Members != nil {
+			fmt.Fprintf(&b, "\t\t\t%q: schema.SetAttribute{ElementType: types.StringType, Computed: true, Description: %q},\n", r.Members.TFName, r.Members.Description)
+		}
 	}
 	fmt.Fprintf(&b, "\t\t},\n\t}\n}\n\n")
 
@@ -98,8 +104,14 @@ func genDataSource(cfg Config, r Resource) ([]byte, error) {
 		fmt.Fprintf(&b, "type %s struct {\n", model)
 		fmt.Fprintf(&b, "\tID types.String `tfsdk:\"id\"`\n")
 		fmt.Fprintf(&b, "\tIdentity types.String `tfsdk:\"identity\"`\n")
-		for _, a := range r.Attributes {
-			fmt.Fprintf(&b, "\t%s\n", a.modelField())
+		if r.RawJSON {
+			fmt.Fprintf(&b, "\tName types.String `tfsdk:\"name\"`\n")
+			fmt.Fprintf(&b, "\tDisplayName types.String `tfsdk:\"display_name\"`\n")
+			fmt.Fprintf(&b, "\tJSON types.String `tfsdk:\"json\"`\n")
+		} else {
+			for _, a := range r.Attributes {
+				fmt.Fprintf(&b, "\t%s\n", a.modelField())
+			}
 		}
 		fmt.Fprintf(&b, "}\n\n")
 		genReadInto(&b, r, model)

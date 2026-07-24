@@ -223,6 +223,15 @@ func genConfigCreate(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, 
 // (Get-only) data source.
 func genReadInto(b *bytes.Buffer, r Resource, model string) {
 	fmt.Fprintf(b, "func read%s(ctx context.Context, obj map[string]any, m *%s) {\n", r.Noun, model)
+	if r.RawJSON {
+		fmt.Fprintf(b, "\tm.ID = types.StringValue(firstNonEmptyStr(getString(obj, %q), getString(obj, %q), getString(obj, %q)))\n", "Guid", "Id", "Identity")
+		fmt.Fprintf(b, "\tm.Identity = types.StringValue(firstNonEmptyStr(getString(obj, %q), getString(obj, %q)))\n", "Identity", "Name")
+		fmt.Fprintf(b, "\tm.Name = types.StringValue(getString(obj, %q))\n", "Name")
+		fmt.Fprintf(b, "\tm.DisplayName = types.StringValue(getString(obj, %q))\n", "DisplayName")
+		fmt.Fprintf(b, "\tm.JSON = types.StringValue(toJSON(obj))\n")
+		fmt.Fprintf(b, "\t_ = ctx\n}\n\n")
+		return
+	}
 	fmt.Fprintf(b, "\tm.ID = types.StringValue(firstNonEmptyStr(getString(obj, %q), getString(obj, %q), getString(obj, %q)))\n", "Guid", "Id", "Identity")
 	// For a per-object config, identity is a required input and must not be
 	// overwritten by a (possibly differently-formatted) read-back value.

@@ -109,6 +109,11 @@ type Resource struct {
 	// DataSourceOnly emits only a (self-contained) data source, no managed
 	// resource — for read-only Get nouns. Only Read and Attributes are used.
 	DataSourceOnly bool
+	// RawJSON makes a DataSourceOnly data source schema-less: it exposes the
+	// looked-up object as id/identity/name/display_name plus a `json` attribute
+	// holding the whole object (json-encoded). Used for Get-only nouns whose
+	// property schema is not machine-readable. Attributes are ignored.
+	RawJSON bool
 }
 
 // Config carries the provider-level constants shared by all generated files and
