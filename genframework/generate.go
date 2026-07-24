@@ -201,14 +201,23 @@ func (a Attribute) planModifiers() string {
 	return strings.Join(mods, ", ")
 }
 
-// createValue renders the params assignment value for create/update.
+// createValue renders the params assignment value for create/update. When the
+// binding field is a pointer (PointerParam — tri-state APIs), it emits the
+// *-pointer accessor so an explicit false / "" is sent and an unset (null/unknown)
+// plan value marshals to nil (omitted) rather than a zero value.
 func (a Attribute) planValue() string {
 	switch a.Type {
 	case TypeBool:
+		if a.PointerParam {
+			return "plan." + a.Field + ".ValueBoolPointer()"
+		}
 		return "plan." + a.Field + ".ValueBool()"
 	case TypeStringSet:
 		return "toStringSlice(ctx, plan." + a.Field + ", &resp.Diagnostics)"
 	default:
+		if a.PointerParam {
+			return "plan." + a.Field + ".ValueStringPointer()"
+		}
 		return "plan." + a.Field + ".ValueString()"
 	}
 }

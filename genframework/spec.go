@@ -41,6 +41,13 @@ type Attribute struct {
 	// only assigned when non-empty, so an empty string is not marshalled as a
 	// value. Object attributes are always TypeString.
 	Object bool
+	// PointerParam is true when the binding's params field is a pointer
+	// (*bool / *string) rather than a value — the case for tri-state
+	// (Nullable<T>) APIs like the Teams config surface, where an explicit false /
+	// "" must be distinguishable from unset. Create/update then pass
+	// ValueBoolPointer() / ValueStringPointer() (nil when the plan value is
+	// null/unknown, so it is simply omitted).
+	PointerParam bool
 }
 
 // Op is a client operation binding: the generated code calls

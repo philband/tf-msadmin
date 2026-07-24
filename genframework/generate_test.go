@@ -79,3 +79,45 @@ func TestGenerateRoleGroupIsValidGo(t *testing.T) {
 		}
 	}
 }
+
+// TestPointerParamEmitsPointerAccessors covers the tri-state (Nullable<T>) path
+// used by the Teams config surface, whose bindings take *bool / *string so an
+// explicit false / "" is distinguishable from unset.
+func TestPointerParamEmitsPointerAccessors(t *testing.T) {
+	cfg := Config{
+		Package: "provider", ClientsImport: "example.com/clients", ClientField: "CS",
+		BindingsImport: "github.com/philband/go-teams/cs", BindingsPkg: "cs",
+	}
+	r := Resource{
+		Noun: "TeamsMeetingPolicy", TFName: "teams_meeting_policy", Description: "A meeting policy.",
+		Attributes: []Attribute{
+			{TFName: "allow_meet_now", Field: "AllowMeetNow", APIName: "AllowMeetNow", Type: TypeBool, Computed: true, PointerParam: true, Description: "Allow meet now.", InCreate: true, InUpdate: true},
+			{TFName: "description", Field: "Description", APIName: "Description", Type: TypeString, Computed: true, PointerParam: true, Description: "Description.", InCreate: true, InUpdate: true},
+		},
+		Create: Op{Method: "NewCsTeamsMeetingPolicy", Params: "NewCsTeamsMeetingPolicyParams", IdentityField: "Identity"},
+		Read:   Op{Method: "GetCsTeamsMeetingPolicy", Params: "GetCsTeamsMeetingPolicyParams", IdentityField: "Identity"},
+		Update: Op{Method: "SetCsTeamsMeetingPolicy", Params: "SetCsTeamsMeetingPolicyParams", IdentityField: "Identity"},
+		Delete: Op{Method: "RemoveCsTeamsMeetingPolicy", Params: "RemoveCsTeamsMeetingPolicyParams", IdentityField: "Identity"},
+	}
+	files, err := Generate(cfg, []Resource{r})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	var res string
+	for _, f := range files {
+		if f.Name == "teams_meeting_policy_resource.go" {
+			res = string(f.Content)
+		}
+	}
+	for _, want := range []string{
+		"plan.AllowMeetNow.ValueBoolPointer()",
+		"plan.Description.ValueStringPointer()",
+	} {
+		if !strings.Contains(res, want) {
+			t.Errorf("generated source missing pointer accessor %q", want)
+		}
+	}
+	if strings.Contains(res, "plan.AllowMeetNow.ValueBool()") {
+		t.Error("PointerParam bool must use ValueBoolPointer(), not ValueBool()")
+	}
+}
