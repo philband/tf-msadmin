@@ -36,6 +36,11 @@ type Attribute struct {
 	Description string   // schema description
 	InCreate    bool     // pass to the create params
 	InUpdate    bool     // pass to the update params
+	// Object is true when the underlying cmdlet parameter is a PowerShell
+	// System.Object (an `any` field in the generated bindings). Such fields are
+	// only assigned when non-empty, so an empty string is not marshalled as a
+	// value. Object attributes are always TypeString.
+	Object bool
 }
 
 // Op is a client operation binding: the generated code calls
@@ -43,19 +48,27 @@ type Attribute struct {
 type Op struct {
 	Method string // e.g. "NewRoleGroup"
 	Params string // e.g. "NewRoleGroupParams"
+	// IdentityField is the params field the op targets the object with (e.g.
+	// "Identity", "PlaceMailboxId", "ScheduleId"). Empty means the op takes no
+	// key — it applies org-wide (e.g. Set-AvailabilityConfig). Not used by
+	// Create (New rarely takes a key).
+	IdentityField string
 }
 
 // Resource is a normalized description of one resource to generate.
 type Resource struct {
-	Noun          string // API noun, e.g. "RoleGroup"
-	TFName        string // resource suffix, e.g. "role_group" -> <provider>_role_group
-	Description   string
-	IdentityParam string // params field used as the -Identity key, e.g. "Identity"
-	Attributes    []Attribute
-	Create        Op
-	Read          Op
-	Update        Op
-	Delete        Op
+	Noun        string // API noun, e.g. "RoleGroup"
+	TFName      string // resource suffix, e.g. "role_group" -> <provider>_role_group
+	Description string
+	// IdentityReadField is an extra read-back object field to source the identity
+	// value from when the key is not the generic "Identity" (e.g.
+	// "PlaceMailboxId"). May be empty.
+	IdentityReadField string
+	Attributes        []Attribute
+	Create            Op
+	Read              Op
+	Update            Op
+	Delete            Op
 }
 
 // Config carries the provider-level constants shared by all generated files and

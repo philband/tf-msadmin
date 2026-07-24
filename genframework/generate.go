@@ -81,6 +81,18 @@ func (r Resource) cmdlet(v string) string {
 	return v + "-" + r.Noun
 }
 
+// identityReadExpr renders the expression that extracts the stored identity
+// value from a read-back object, trying the generic keys plus the resource's
+// specific IdentityReadField (e.g. "PlaceMailboxId").
+func (r Resource) identityReadExpr() string {
+	parts := []string{`getString(obj, "Identity")`, `getString(obj, "Guid")`}
+	if f := r.IdentityReadField; f != "" && f != "Identity" && f != "Guid" {
+		parts = append(parts, fmt.Sprintf("getString(obj, %q)", f))
+	}
+	parts = append(parts, `getString(obj, "Name")`)
+	return "firstNonEmptyStr(" + strings.Join(parts, ", ") + ")"
+}
+
 func (r Resource) hasType(t AttrType) bool {
 	for _, a := range r.Attributes {
 		if a.Type == t {
@@ -176,12 +188,14 @@ func (a Attribute) modeFields() string {
 
 func (a Attribute) planModifiers() string {
 	var mods []string
-	kind := a.tfType() // String/Bool/Set
-	pkg := strings.ToLower(kind) + "planmodifier"
+	pkg := strings.ToLower(a.tfType()) + "planmodifier" // string/bool/set planmodifier
 	if a.Replace {
 		mods = append(mods, pkg+".RequiresReplace()")
 	}
-	if a.Computed && a.Type == TypeStringSet {
+	// Computed attributes keep their prior value when the plan leaves them
+	// unknown, so an unrelated update does not churn them (and, for
+	// RequiresReplace ones, does not spuriously force replacement).
+	if a.Computed {
 		mods = append(mods, pkg+".UseStateForUnknown()")
 	}
 	return strings.Join(mods, ", ")

@@ -123,18 +123,25 @@ func genCreate(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, pkg st
 	fmt.Fprintf(b, "\tif resp.Diagnostics.HasError() {\n\t\treturn\n\t}\n\n")
 	fmt.Fprintf(b, "\tp := %s.%s{\n", pkg, r.Create.Params)
 	for _, a := range r.Attributes {
-		if a.InCreate {
+		if a.InCreate && !a.Object {
 			fmt.Fprintf(b, "\t\t%s: %s,\n", a.Field, a.planValue())
 		}
 	}
 	fmt.Fprintf(b, "\t}\n")
+	// System.Object params are `any` fields: only set when non-empty so "" is
+	// not marshalled as a value.
+	for _, a := range r.Attributes {
+		if a.InCreate && a.Object {
+			fmt.Fprintf(b, "\tif v := plan.%s.ValueString(); v != \"\" {\n\t\tp.%s = v\n\t}\n", a.Field, a.Field)
+		}
+	}
 	fmt.Fprintf(b, "\tif resp.Diagnostics.HasError() {\n\t\treturn\n\t}\n")
 	fmt.Fprintf(b, "\tres, err := %s.%s(ctx, p)\n", svc, r.Create.Method)
 	fmt.Fprintf(b, "\tif err != nil {\n\t\tresp.Diagnostics.AddError(%q, err.Error())\n\t\treturn\n\t}\n", r.cmdlet("New")+" failed")
 	fmt.Fprintf(b, "\tobj := firstObject(res.Value)\n")
 	fmt.Fprintf(b, "\tif obj == nil {\n\t\tresp.Diagnostics.AddError(%q, %q)\n\t\treturn\n\t}\n", r.cmdlet("New")+" returned no object", "the cmdlet did not return the created object")
 	fmt.Fprintf(b, "\tcfg := plan\n")
-	fmt.Fprintf(b, "\tident := firstNonEmptyStr(getString(obj, %q), getString(obj, %q))\n", "Identity", "Name")
+	fmt.Fprintf(b, "\tident := %s\n", r.identityReadExpr())
 	fmt.Fprintf(b, "\tif !r.refresh(ctx, ident, &plan, &resp.Diagnostics, nil) {\n")
 	fmt.Fprintf(b, "\t\tif resp.Diagnostics.HasError() {\n\t\t\treturn\n\t\t}\n")
 	fmt.Fprintf(b, "\t\tread%s(ctx, obj, &plan)\n\t}\n", r.Noun)
@@ -159,9 +166,17 @@ func genUpdate(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, pkg st
 	fmt.Fprintf(b, "\tresp.Diagnostics.Append(req.State.Get(ctx, &state)...)\n")
 	fmt.Fprintf(b, "\tif resp.Diagnostics.HasError() {\n\t\treturn\n\t}\n")
 	fmt.Fprintf(b, "\tid := r.identityOf(state)\n")
-	fmt.Fprintf(b, "\tsp := %s.%s{%s: id}\n", pkg, r.Update.Params, r.IdentityParam)
+	fmt.Fprintf(b, "\tsp := %s.%s{}\n", pkg, r.Update.Params)
+	if r.Update.IdentityField != "" {
+		fmt.Fprintf(b, "\tsp.%s = id\n", r.Update.IdentityField)
+	}
 	for _, a := range r.Attributes {
-		if a.InUpdate && a.Field != r.IdentityParam {
+		if !a.InUpdate {
+			continue
+		}
+		if a.Object {
+			fmt.Fprintf(b, "\tif v := plan.%s.ValueString(); v != \"\" {\n\t\tsp.%s = v\n\t}\n", a.Field, a.Field)
+		} else {
 			fmt.Fprintf(b, "\tsp.%s = %s\n", a.Field, a.planValue())
 		}
 	}
@@ -171,7 +186,7 @@ func genUpdate(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, pkg st
 	// reflected predicate over string attributes that were updated.
 	fmt.Fprintf(b, "\treflected := reconcile.ReflectsFields(map[string]types.String{\n")
 	for _, a := range r.Attributes {
-		if a.InUpdate && a.Type == TypeString && a.Field != r.IdentityParam {
+		if a.InUpdate && a.Type == TypeString {
 			fmt.Fprintf(b, "\t\t%q: cfg.%s,\n", a.APIName, a.Field)
 		}
 	}
@@ -186,7 +201,7 @@ func genDelete(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, pkg st
 	fmt.Fprintf(b, "\tvar state %s\n", model)
 	fmt.Fprintf(b, "\tresp.Diagnostics.Append(req.State.Get(ctx, &state)...)\n")
 	fmt.Fprintf(b, "\tif resp.Diagnostics.HasError() {\n\t\treturn\n\t}\n")
-	fmt.Fprintf(b, "\tif _, err := %s.%s(ctx, %s.%s{%s: r.identityOf(state)}); err != nil {\n", svc, r.Delete.Method, pkg, r.Delete.Params, r.IdentityParam)
+	fmt.Fprintf(b, "\tif _, err := %s.%s(ctx, %s.%s{%s: r.identityOf(state)}); err != nil {\n", svc, r.Delete.Method, pkg, r.Delete.Params, r.Delete.IdentityField)
 	fmt.Fprintf(b, "\t\tif !isNotFound(err) {\n\t\t\tresp.Diagnostics.AddError(%q, err.Error())\n\t\t}\n\t}\n}\n\n", r.cmdlet("Remove")+" failed")
 }
 
@@ -211,7 +226,7 @@ func genHelpers(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, pkg s
 	// refresh
 	fmt.Fprintf(b, "func (r *%s) refresh(ctx context.Context, identity any, m *%s, diags *diag.Diagnostics, reflected func(map[string]any) bool) bool {\n", recv, model)
 	fmt.Fprintf(b, "\tget := func(ctx context.Context) (map[string]any, bool, error) {\n")
-	fmt.Fprintf(b, "\t\tres, gerr := %s.%s(ctx, %s.%s{%s: identity})\n", svc, r.Read.Method, pkg, r.Read.Params, r.IdentityParam)
+	fmt.Fprintf(b, "\t\tres, gerr := %s.%s(ctx, %s.%s{%s: identity})\n", svc, r.Read.Method, pkg, r.Read.Params, r.Read.IdentityField)
 	fmt.Fprintf(b, "\t\tif gerr != nil {\n\t\t\tif isNotFound(gerr) {\n\t\t\t\treturn nil, false, nil\n\t\t\t}\n\t\t\treturn nil, false, gerr\n\t\t}\n")
 	fmt.Fprintf(b, "\t\to := firstObject(res.Value)\n\t\treturn o, o != nil, nil\n\t}\n")
 	fmt.Fprintf(b, "\tobj, present, err := resourcex.LoadUntil(ctx, consistency.Config{}, get, reflected)\n")
@@ -223,7 +238,7 @@ func genHelpers(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, pkg s
 	// and the data source.
 	fmt.Fprintf(b, "func read%s(ctx context.Context, obj map[string]any, m *%s) {\n", r.Noun, model)
 	fmt.Fprintf(b, "\tm.ID = types.StringValue(firstNonEmptyStr(getString(obj, %q), getString(obj, %q), getString(obj, %q)))\n", "Guid", "Id", "Identity")
-	fmt.Fprintf(b, "\tm.Identity = types.StringValue(firstNonEmptyStr(getString(obj, %q), getString(obj, %q)))\n", "Identity", "Name")
+	fmt.Fprintf(b, "\tm.Identity = types.StringValue(%s)\n", r.identityReadExpr())
 	for _, a := range r.Attributes {
 		fmt.Fprintf(b, "\t%s\n", a.readAssign())
 	}

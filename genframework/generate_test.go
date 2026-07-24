@@ -14,10 +14,9 @@ func roleGroupFixture() (Config, Resource) {
 		BindingsPkg:    "exo",
 	}
 	r := Resource{
-		Noun:          "RoleGroup",
-		TFName:        "role_group",
-		Description:   "A management role group.",
-		IdentityParam: "Identity",
+		Noun:        "RoleGroup",
+		TFName:      "role_group",
+		Description: "A management role group.",
 		Attributes: []Attribute{
 			{TFName: "name", Field: "Name", APIName: "Name", Type: TypeString, Required: true, Replace: true, Description: "Unique name.", InCreate: true},
 			{TFName: "description", Field: "Description", APIName: "Description", Type: TypeString, Computed: true, Description: "Description.", InCreate: true, InUpdate: true},
@@ -25,9 +24,9 @@ func roleGroupFixture() (Config, Resource) {
 			{TFName: "roles", Field: "Roles", APIName: "Roles", Type: TypeStringSet, Computed: true, Replace: true, Description: "Roles.", InCreate: true},
 		},
 		Create: Op{Method: "NewRoleGroup", Params: "NewRoleGroupParams"},
-		Read:   Op{Method: "GetRoleGroup", Params: "GetRoleGroupParams"},
-		Update: Op{Method: "SetRoleGroup", Params: "SetRoleGroupParams"},
-		Delete: Op{Method: "RemoveRoleGroup", Params: "RemoveRoleGroupParams"},
+		Read:   Op{Method: "GetRoleGroup", Params: "GetRoleGroupParams", IdentityField: "Identity"},
+		Update: Op{Method: "SetRoleGroup", Params: "SetRoleGroupParams", IdentityField: "Identity"},
+		Delete: Op{Method: "RemoveRoleGroup", Params: "RemoveRoleGroupParams", IdentityField: "Identity"},
 	}
 	return cfg, r
 }

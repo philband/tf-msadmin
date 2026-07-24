@@ -73,7 +73,7 @@ func genDataSource(cfg Config, r Resource) ([]byte, error) {
 	}
 	fmt.Fprintf(&b, "\tif identity == \"\" {\n\t\tresp.Diagnostics.AddError(%q, %q)\n\t\treturn\n\t}\n", "Missing lookup key", "set identity"+nameHint(r)+" to select the object")
 	fmt.Fprintf(&b, "\tget := func(ctx context.Context) (map[string]any, bool, error) {\n")
-	fmt.Fprintf(&b, "\t\tres, gerr := %s.%s(ctx, %s.%s{%s: identity})\n", svc, r.Read.Method, pkg, r.Read.Params, r.IdentityParam)
+	fmt.Fprintf(&b, "\t\tres, gerr := %s.%s(ctx, %s.%s{%s: identity})\n", svc, r.Read.Method, pkg, r.Read.Params, r.Read.IdentityField)
 	fmt.Fprintf(&b, "\t\tif gerr != nil {\n\t\t\tif isNotFound(gerr) {\n\t\t\t\treturn nil, false, nil\n\t\t\t}\n\t\t\treturn nil, false, gerr\n\t\t}\n")
 	fmt.Fprintf(&b, "\t\to := firstObject(res.Value)\n\t\treturn o, o != nil, nil\n\t}\n")
 	fmt.Fprintf(&b, "\tobj, present, err := resourcex.LoadUntil(ctx, consistency.Config{}, get, nil)\n")
