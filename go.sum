@@ -33,10 +33,10 @@ github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWE
 github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
 github.com/mitchellh/go-testing-interface v1.14.1 h1:jrgshOhYAUVNMAJiKbEu7EqAwgJJ2JqpQmpLJOu07cU=
 github.com/mitchellh/go-testing-interface v1.14.1/go.mod h1:gfgS7OtZj6MA4U1UrDRp04twqAjfvlZyCfX3sDjEym8=
-github.com/philband/go-exoscc v0.1.0 h1:TNmtsu8s9osG8WAw54o5hxryeWPqnE6IQuEZQ5A+CJQ=
-github.com/philband/go-exoscc v0.1.0/go.mod h1:hsku18Ns1QwDb1KtVbwlAvB8mr483h+97z9xdwUQ0a8=
-github.com/philband/go-msadmin v0.1.0 h1:ytjBXjvwPCWf1v0rAYsHBEcWxdF2xLkJcVBxva2dqr0=
-github.com/philband/go-msadmin v0.1.0/go.mod h1:p29/Pmz3AmUQ+CF0iictkzhAdZNU432YpxUrkEF2/Cw=
+github.com/philband/go-exoscc v0.3.0 h1:dtGpBxpKUqfxZHrgGiO60+JuidPRVaNY6QOvQPJUSOQ=
+github.com/philband/go-exoscc v0.3.0/go.mod h1:hsku18Ns1QwDb1KtVbwlAvB8mr483h+97z9xdwUQ0a8=
+github.com/philband/go-msadmin v0.2.0 h1:pxuy1M807Q9WSPZVWm/j/lPVyUUWE82eDvXEzM6OOpI=
+github.com/philband/go-msadmin v0.2.0/go.mod h1:3MXRb2UM6/pijqDKBc4FUiuRiiNo5w9Z5EuqTRwOYww=
 github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 h1:KoWmjvw+nsYOo29YJK9vDA65RGE3NrOnUtO7a+RF9HU=
 github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8/go.mod h1:HKlIX3XHQyzLZPlr7++PzdhaXEj94dEiJgZDTsxEqUI=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
