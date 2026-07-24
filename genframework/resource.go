@@ -81,6 +81,9 @@ func genResource(cfg Config, r Resource) ([]byte, error) {
 	for _, a := range r.Attributes {
 		fmt.Fprintf(&b, "\t%s\n", a.modelField())
 	}
+	if r.Members != nil {
+		fmt.Fprintf(&b, "\t%s types.Set `tfsdk:%q`\n", r.Members.Field, r.Members.TFName)
+	}
 	fmt.Fprintf(&b, "}\n\n")
 
 	// Metadata.
@@ -98,6 +101,10 @@ func genResource(cfg Config, r Resource) ([]byte, error) {
 		"identity", "Identity used to target the object in cmdlets.")
 	for _, a := range r.Attributes {
 		fmt.Fprintf(&b, "\t\t\t%q: %s,\n", a.TFName, a.schemaAttr())
+	}
+	if r.Members != nil {
+		fmt.Fprintf(&b, "\t\t\t%q: schema.SetAttribute{ElementType: types.StringType, Optional: true, Computed: true, Description: %q, PlanModifiers: []planmodifier.Set{setplanmodifier.UseStateForUnknown()}},\n",
+			r.Members.TFName, r.Members.Description)
 	}
 	fmt.Fprintf(&b, "\t\t},\n\t}\n}\n\n")
 
@@ -145,6 +152,13 @@ func genCreate(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, pkg st
 	fmt.Fprintf(b, "\tif !r.refresh(ctx, ident, &plan, &resp.Diagnostics, nil) {\n")
 	fmt.Fprintf(b, "\t\tif resp.Diagnostics.HasError() {\n\t\t\treturn\n\t\t}\n")
 	fmt.Fprintf(b, "\t\tread%s(ctx, obj, &plan)\n\t}\n", r.Noun)
+	if mc := r.Members; mc != nil {
+		fmt.Fprintf(b, "\tif mem := toStringSlice(ctx, cfg.%s, &resp.Diagnostics); len(mem) > 0 {\n", mc.Field)
+		fmt.Fprintf(b, "\t\tif merr := resourcex.RetryWrite(ctx, consistency.Config{}, func(ctx context.Context) error {\n")
+		fmt.Fprintf(b, "\t\t\t_, e := %s.%s(ctx, %s.%s{%s: ident, %s: mem})\n\t\t\treturn e\n\t\t}, isNotFound); merr != nil {\n", svc, mc.UpdateMethod, pkg, mc.UpdateParams, mc.IdentityField, mc.MembersField)
+		fmt.Fprintf(b, "\t\t\tresp.Diagnostics.AddError(%q, merr.Error())\n\t\t\treturn\n\t\t}\n", "Update-"+r.Noun+"Member failed")
+		fmt.Fprintf(b, "\t\tread%sMembers(ctx, %s, ident, &plan)\n\t}\n", r.Noun, svc)
+	}
 	fmt.Fprintf(b, "\tr.reconcileState(&cfg, &plan)\n")
 	fmt.Fprintf(b, "\tresp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)\n}\n\n")
 }
@@ -192,6 +206,14 @@ func genUpdate(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, pkg st
 	}
 	fmt.Fprintf(b, "\t}, getString)\n")
 	fmt.Fprintf(b, "\tr.refresh(ctx, id, &plan, &resp.Diagnostics, reflected)\n")
+	if mc := r.Members; mc != nil {
+		fmt.Fprintf(b, "\tif !plan.%s.Equal(state.%s) {\n", mc.Field, mc.Field)
+		fmt.Fprintf(b, "\t\tmem := toStringSlice(ctx, plan.%s, &resp.Diagnostics)\n", mc.Field)
+		fmt.Fprintf(b, "\t\tif merr := resourcex.RetryWrite(ctx, consistency.Config{}, func(ctx context.Context) error {\n")
+		fmt.Fprintf(b, "\t\t\t_, e := %s.%s(ctx, %s.%s{%s: id, %s: mem})\n\t\t\treturn e\n\t\t}, isNotFound); merr != nil {\n", svc, mc.UpdateMethod, pkg, mc.UpdateParams, mc.IdentityField, mc.MembersField)
+		fmt.Fprintf(b, "\t\t\tresp.Diagnostics.AddError(%q, merr.Error())\n\t\t\treturn\n\t\t}\n", "Update-"+r.Noun+"Member failed")
+		fmt.Fprintf(b, "\t\tread%sMembers(ctx, %s, id, &plan)\n\t}\n", r.Noun, svc)
+	}
 	fmt.Fprintf(b, "\tr.reconcileState(&cfg, &plan)\n")
 	fmt.Fprintf(b, "\tresp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)\n}\n\n")
 }
@@ -232,7 +254,11 @@ func genHelpers(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, pkg s
 	fmt.Fprintf(b, "\tobj, present, err := resourcex.LoadUntil(ctx, consistency.Config{}, get, reflected)\n")
 	fmt.Fprintf(b, "\tif err != nil {\n\t\tdiags.AddError(%q, err.Error())\n\t\treturn false\n\t}\n", r.cmdlet("Get")+" failed")
 	fmt.Fprintf(b, "\tif !present {\n\t\treturn false\n\t}\n")
-	fmt.Fprintf(b, "\tread%s(ctx, obj, m)\n\treturn true\n}\n\n", r.Noun)
+	fmt.Fprintf(b, "\tread%s(ctx, obj, m)\n", r.Noun)
+	if r.Members != nil {
+		fmt.Fprintf(b, "\tread%sMembers(ctx, %s, identity, m)\n", r.Noun, svc)
+	}
+	fmt.Fprintf(b, "\treturn true\n}\n\n")
 
 	// read<Noun> maps a read-back object into the model; shared by the resource
 	// and the data source.
@@ -249,5 +275,20 @@ func genHelpers(b *bytes.Buffer, cfg Config, r Resource, recv, model, svc, pkg s
 	for _, a := range r.Attributes {
 		fmt.Fprintf(b, "\tread.%s = reconcile.%s(cfg.%s, read.%s)\n", a.Field, a.keepFn(), a.Field, a.Field)
 	}
+	if r.Members != nil {
+		fmt.Fprintf(b, "\tread.%s = reconcile.KeepSet(cfg.%s, read.%s)\n", r.Members.Field, r.Members.Field, r.Members.Field)
+	}
 	fmt.Fprintf(b, "}\n")
+
+	// read<Noun>Members reads the members sub-collection (needs the client, so it
+	// is separate from the shared read<Noun>). Best-effort: on error it leaves an
+	// unset attribute empty rather than failing the read.
+	if mc := r.Members; mc != nil {
+		fmt.Fprintf(b, "\nfunc read%sMembers(ctx context.Context, svc *%s.Service, identity any, m *%s) {\n", r.Noun, pkg, model)
+		fmt.Fprintf(b, "\tres, err := svc.%s(ctx, %s.%s{%s: identity})\n", mc.ReadMethod, pkg, mc.ReadParams, mc.IdentityField)
+		fmt.Fprintf(b, "\tif err != nil {\n\t\tif m.%s.IsNull() || m.%s.IsUnknown() {\n\t\t\tm.%s = stringSetValue(ctx, nil)\n\t\t}\n\t\treturn\n\t}\n", mc.Field, mc.Field, mc.Field)
+		fmt.Fprintf(b, "\tvar members []string\n")
+		fmt.Fprintf(b, "\tfor _, mm := range res.Value {\n\t\tmembers = append(members, %s)\n\t}\n", mc.memberReadExpr())
+		fmt.Fprintf(b, "\tm.%s = stringSetValue(ctx, members)\n}\n", mc.Field)
+	}
 }

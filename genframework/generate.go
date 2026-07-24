@@ -61,10 +61,25 @@ func lowerFirst(s string) string {
 	return strings.ToLower(s[:1]) + s[1:]
 }
 
-func (r Resource) recv() string  { return lowerFirst(r.Noun) + "Resource" }
-func (r Resource) model() string { return lowerFirst(r.Noun) + "Model" }
-func (r Resource) ctor() string  { return "New" + r.Noun + "Resource" }
-func (r Resource) hasSet() bool  { return r.hasType(TypeStringSet) }
+func (r Resource) recv() string     { return lowerFirst(r.Noun) + "Resource" }
+func (r Resource) model() string    { return lowerFirst(r.Noun) + "Model" }
+func (r Resource) ctor() string     { return "New" + r.Noun + "Resource" }
+func (r Resource) hasMembers() bool { return r.Members != nil }
+func (r Resource) hasSet() bool     { return r.hasType(TypeStringSet) || r.Members != nil }
+
+// memberReadExpr renders firstNonEmptyStr(getString(mm,"K1"), getString(mm,"K2"), ...)
+// over the member collection's read-back keys, used to extract a member identity.
+func (mc MemberCollection) memberReadExpr() string {
+	keys := mc.ReadKeys
+	if len(keys) == 0 {
+		keys = []string{"PrimarySmtpAddress", "Name", "Identity"}
+	}
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = fmt.Sprintf("getString(mm, %q)", k)
+	}
+	return "firstNonEmptyStr(" + strings.Join(parts, ", ") + ")"
+}
 
 // hasBoolMod reports whether any Bool attribute emits a plan modifier (only
 // RequiresReplace does), which requires the boolplanmodifier import.

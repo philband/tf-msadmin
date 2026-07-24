@@ -62,6 +62,23 @@ type Op struct {
 	IdentityField string
 }
 
+// MemberCollection describes a members sub-collection managed by companion
+// cmdlets (Get-<Noun>Member to read, Update-<Noun>Member -Members to replace the
+// whole set — e.g. RoleGroupMember, DistributionGroupMember). It is exposed as a
+// single "members" set attribute whose values are member identities.
+type MemberCollection struct {
+	TFName        string // Terraform attribute name, e.g. "members"
+	Field         string // model field name, e.g. "Members"
+	Description   string
+	ReadMethod    string   // e.g. "GetRoleGroupMember"
+	ReadParams    string   // e.g. "GetRoleGroupMemberParams"
+	UpdateMethod  string   // e.g. "UpdateRoleGroupMember"
+	UpdateParams  string   // e.g. "UpdateRoleGroupMemberParams"
+	IdentityField string   // key param on the member cmdlets, e.g. "Identity"
+	MembersField  string   // set param on Update-<Noun>Member, e.g. "Members"
+	ReadKeys      []string // read-back object fields for a member's identity, e.g. ["PrimarySmtpAddress","Name"]
+}
+
 // Resource is a normalized description of one resource to generate.
 type Resource struct {
 	Noun        string // API noun, e.g. "RoleGroup"
@@ -76,6 +93,9 @@ type Resource struct {
 	Read              Op
 	Update            Op
 	Delete            Op
+	// Members, when non-nil, adds a members sub-collection managed by companion
+	// cmdlets.
+	Members *MemberCollection
 }
 
 // Config carries the provider-level constants shared by all generated files and

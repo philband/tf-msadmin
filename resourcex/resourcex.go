@@ -8,6 +8,33 @@ import (
 	"github.com/philband/go-msadmin/consistency"
 )
 
+// RetryWrite runs do, retrying while retryable(err) reports true, until it
+// succeeds or the budget is exhausted. It exists because a write against a
+// companion cmdlet (e.g. Update-<Noun>Member) issued right after a create can
+// fail "not found" until the object propagates across backend sessions, even
+// once the main object is already readable. On budget exhaustion it returns the
+// last retryable error; a non-retryable error is returned immediately.
+func RetryWrite(ctx context.Context, cfg consistency.Config, do func(context.Context) error, retryable func(error) bool) error {
+	var last error
+	_, ok, err := consistency.RetryUntil(ctx, cfg, func(ctx context.Context) (struct{}, bool, error) {
+		if e := do(ctx); e != nil {
+			last = e
+			if retryable(e) {
+				return struct{}{}, false, nil // retry
+			}
+			return struct{}{}, false, e // fatal
+		}
+		return struct{}{}, true, nil // success
+	}, nil)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return last
+	}
+	return nil
+}
+
 // LoadUntil reads a resource, tolerating the eventual consistency of the
 // Microsoft admin APIs:
 //

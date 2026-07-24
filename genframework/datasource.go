@@ -55,6 +55,9 @@ func genDataSource(cfg Config, r Resource) ([]byte, error) {
 		optional := a.Field == "Name"
 		fmt.Fprintf(&b, "\t\t\t%q: %s,\n", a.TFName, dsSchemaAttr(a, optional))
 	}
+	if r.Members != nil {
+		fmt.Fprintf(&b, "\t\t\t%q: schema.SetAttribute{ElementType: types.StringType, Computed: true, Description: %q},\n", r.Members.TFName, r.Members.Description)
+	}
 	fmt.Fprintf(&b, "\t\t},\n\t}\n}\n\n")
 
 	fmt.Fprintf(&b, "func (d *%s) Configure(_ context.Context, req datasource.ConfigureRequest, _ *datasource.ConfigureResponse) {\n", recv)
@@ -80,6 +83,9 @@ func genDataSource(cfg Config, r Resource) ([]byte, error) {
 	fmt.Fprintf(&b, "\tif err != nil {\n\t\tresp.Diagnostics.AddError(%q, err.Error())\n\t\treturn\n\t}\n", r.cmdlet("Get")+" failed")
 	fmt.Fprintf(&b, "\tif !present {\n\t\tresp.Diagnostics.AddError(%q, %q+identity)\n\t\treturn\n\t}\n", r.Noun+" not found", "no "+r.Noun+" object for identity ")
 	fmt.Fprintf(&b, "\tread%s(ctx, obj, &data)\n", r.Noun)
+	if r.Members != nil {
+		fmt.Fprintf(&b, "\tread%sMembers(ctx, %s, identity, &data)\n", r.Noun, svc)
+	}
 	fmt.Fprintf(&b, "\tresp.Diagnostics.Append(resp.State.Set(ctx, &data)...)\n}\n")
 
 	return gofmt(b.String())
